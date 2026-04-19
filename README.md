@@ -15,7 +15,7 @@ Jednoduchý lokálny Python CLI nástroj, ktorý:
 - Interaktívny výber jazyka (`sk` / `cz`) alebo parameter v CLI
 - Výpis subtitle streamov z MKV a výber streamu na extrakciu
 - Režim iba extrakcia (`.mkv` -> `.srt`) bez prekladu
-- Vloženie preložených titulkov späť do `.mkv` a nastavenie ako default track
+- Pri `.mkv` vie ísť priamo z MKV do MKV: extrahuje titulky, preloží ich a vloží späť ako default track bez ručného medzikroku so SRT
 - Lokálne spustenie na tvojom počítači
 
 ## Požiadavky
