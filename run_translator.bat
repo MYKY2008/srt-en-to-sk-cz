@@ -45,6 +45,8 @@ set "INPUT_FILE="
 set /p INPUT_FILE=Zadaj celu cestu k EN .srt alebo .mkv suboru (alebo ho sem pretiahni): 
 set "INPUT_FILE=%INPUT_FILE:"=%"
 
+for %%I in ("%INPUT_FILE%") do set "INPUT_EXT=%%~xI"
+
 if "%INPUT_FILE%"=="" (
     echo Nezadal si vstupny subor.
     pause
@@ -107,9 +109,27 @@ if "%TARGET%"=="" (
     exit /b 1
 )
 
+set "EMBED_TO_MKV="
+if /I "%INPUT_EXT%"==".mkv" (
+    echo.
+    echo Chces po preklade vlozit titulky spat do MKV a nastavit ich ako default?
+    echo   1) Ano
+    echo   2) Nie
+    set /p EMBED_CHOICE=Zadaj 1 alebo 2: 
+
+    if "%EMBED_CHOICE%"=="1" set "EMBED_TO_MKV=--embed-to-mkv"
+    if "%EMBED_CHOICE%"=="2" set "EMBED_TO_MKV="
+
+    if "%EMBED_CHOICE%" NEQ "1" if "%EMBED_CHOICE%" NEQ "2" (
+        echo Neplatna volba.
+        pause
+        exit /b 1
+    )
+)
+
 echo.
 echo Spustam preklad...
-".venv\Scripts\python.exe" srt_translate.py "%INPUT_FILE%" --target %TARGET%
+".venv\Scripts\python.exe" srt_translate.py "%INPUT_FILE%" --target %TARGET% %EMBED_TO_MKV%
 set EXIT_CODE=%ERRORLEVEL%
 
 echo.

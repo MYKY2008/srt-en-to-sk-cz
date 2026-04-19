@@ -15,6 +15,7 @@ Jednoduchý lokálny Python CLI nástroj, ktorý:
 - Interaktívny výber jazyka (`sk` / `cz`) alebo parameter v CLI
 - Výpis subtitle streamov z MKV a výber streamu na extrakciu
 - Režim iba extrakcia (`.mkv` -> `.srt`) bez prekladu
+- Vloženie preložených titulkov späť do `.mkv` a nastavenie ako default track
 - Lokálne spustenie na tvojom počítači
 
 ## Požiadavky
@@ -65,6 +66,7 @@ Spusti `run_translator.bat`.
 - vypýta si vstupný `.srt` alebo `.mkv` súbor
 - vypýta si režim (preklad alebo iba extrakcia)
 - pri preklade vypýta cieľový jazyk (`sk` alebo `cz`)
+- pri `.mkv` vstupe sa opýta, či má preložené titulky vložiť späť do MKV ako default track
 - spustí preklad alebo extrakciu
 
 ### Interaktívny výber cieľového jazyka
@@ -89,6 +91,24 @@ python srt_translate.py movie.mkv --target sk
 ```
 
 Skript vypíše subtitle streamy a nechá ťa vybrať stream na extrakciu.
+
+### Preklad a vloženie titulkov späť do MKV
+
+```bash
+python srt_translate.py movie.mkv --target sk --embed-to-mkv
+```
+
+Tento režim:
+
+- preloží titulky do `.srt`
+- vloží ich späť do výstupného `.mkv`
+- nastaví nový subtitle track ako default
+
+Ak chceš vlastný názov výstupného MKV súboru:
+
+```bash
+python srt_translate.py movie.mkv --target sk --embed-to-mkv --mkv-output movie.sk.mkv
+```
 
 ### Výpis subtitle streamov v MKV
 
@@ -117,6 +137,8 @@ python srt_translate.py input_en.srt --target sk --output output_sk.srt
 python srt_translate.py movie.mkv --extract-only --output movie.extracted.srt
 ```
 
+Pri `--embed-to-mkv` sa názov výstupného MKV dá nastaviť cez `--mkv-output`.
+
 ### Nastavenie veľkosti batchu (voliteľné)
 
 ```bash
@@ -128,6 +150,7 @@ python srt_translate.py input_en.srt --target cz --batch-size 40
 - Výstup sa ukladá ako UTF-8 s BOM (`utf-8-sig`) kvôli dobrej kompatibilite.
 - Predvolený názov výstupu je `<input_stem>.<target>.srt`.
 - Pri `--extract-only` je predvolený názov výstupu `<input_stem>.extracted.srt`.
+- Pri `--embed-to-mkv` je predvolený názov výstupného MKV `<input_stem>.<target>.mkv`.
 - Nástroj prekladá iba text titulkov, nie časovanie ani indexy.
 - Extrakcia do `.srt` funguje pre textové subtitle streamy. Obrazové streamy (napr. PGS/VobSub) bez OCR nie je možné priamo previesť do textového `.srt`.
 

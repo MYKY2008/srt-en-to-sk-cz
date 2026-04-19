@@ -19,6 +19,8 @@ from deep_translator import GoogleTranslator
 NL_TOKEN = "__SRT_NEWLINE_TOKEN__"
 SUPPORTED_TARGETS = {"sk": "slovenčiny", "cz": "češtiny"}
 ENCODING_CANDIDATES = ("utf-8-sig", "utf-8", "cp1250", "latin-1")
+SUBTITLE_LANGUAGE_CODES = {"sk": "sk", "cz": "cs"}
+SUBTITLE_TITLES = {"sk": "Slovenské titulky", "cz": "České titulky"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,6 +53,16 @@ def parse_args() -> argparse.Namespace:
         "--extract-only",
         action="store_true",
         help="Iba extrahuje titulky z .mkv do .srt bez prekladu",
+    )
+    parser.add_argument(
+        "--embed-to-mkv",
+        action="store_true",
+        help="Po preklade vloží titulky späť do .mkv a nastaví ich ako default",
+    )
+    parser.add_argument(
+        "--mkv-output",
+        type=Path,
+        help="Cesta k výstupnému .mkv súboru pri --embed-to-mkv (predvolené: <input_stem>.<target>.mkv)",
     )
     parser.add_argument(
         "--subtitle-stream",
@@ -88,6 +100,12 @@ def resolve_extract_output_path(input_path: Path, output: Path | None) -> Path:
     if output is not None:
         return output
     return input_path.with_name(f"{input_path.stem}.extracted.srt")
+
+
+def resolve_mkv_output_path(input_path: Path, target: str, output: Path | None) -> Path:
+    if output is not None:
+        return output
+    return input_path.with_name(f"{input_path.stem}.{target}.mkv")
 
 
 def load_srt(path: Path) -> pysrt.SubRipFile:
@@ -244,6 +262,58 @@ def extract_mkv_subtitles_to_srt(mkv_path: Path, output_srt: Path, stream_index:
         raise RuntimeError(f"Extrakcia titulkov zlyhala: {stderr or 'ffmpeg zlyhal bez detailu'}")
 
 
+def mux_srt_into_mkv(
+    mkv_path: Path,
+    subtitle_srt_path: Path,
+    output_mkv_path: Path,
+    target: str,
+) -> None:
+    output_mkv_path.parent.mkdir(parents=True, exist_ok=True)
+
+    existing_subtitle_streams = probe_subtitle_streams(mkv_path)
+    subtitle_stream_count = len(existing_subtitle_streams)
+    new_subtitle_stream_index = subtitle_stream_count
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(mkv_path),
+        "-i",
+        str(subtitle_srt_path),
+        "-map",
+        "0",
+        "-map",
+        "1:0",
+        "-map_metadata",
+        "0",
+        "-map_chapters",
+        "0",
+        "-c",
+        "copy",
+    ]
+
+    for stream_index in range(subtitle_stream_count):
+        cmd.extend([f"-disposition:s:{stream_index}", "0"])
+
+    cmd.extend(
+        [
+            f"-metadata:s:s:{new_subtitle_stream_index}",
+            f"language={SUBTITLE_LANGUAGE_CODES[target]}",
+            f"-metadata:s:s:{new_subtitle_stream_index}",
+            f"title={SUBTITLE_TITLES[target]}",
+            f"-disposition:s:{new_subtitle_stream_index}",
+            "default",
+            str(output_mkv_path),
+        ]
+    )
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        raise RuntimeError(f"Vloženie titulkov do MKV zlyhalo: {stderr or 'ffmpeg zlyhal bez detailu'}")
+
+
 def translate_subtitles(subs: pysrt.SubRipFile, target: str, batch_size: int) -> tuple[int, int]:
     target_lang = "sk" if target == "sk" else "cs"
     translator = GoogleTranslator(source="en", target=target_lang)
@@ -297,6 +367,18 @@ def main() -> int:
         print("Chyba: --extract-only je dostupné iba pre .mkv vstup.", file=sys.stderr)
         return 1
 
+    if args.extract_only and args.embed_to_mkv:
+        print("Chyba: --extract-only sa nedá kombinovať s --embed-to-mkv.", file=sys.stderr)
+        return 1
+
+    if args.embed_to_mkv and input_suffix != ".mkv":
+        print("Chyba: --embed-to-mkv je dostupné iba pre .mkv vstup.", file=sys.stderr)
+        return 1
+
+    if args.embed_to_mkv and args.list_subtitle_streams:
+        print("Chyba: --embed-to-mkv sa nedá kombinovať s --list-subtitle-streams.", file=sys.stderr)
+        return 1
+
     if args.list_subtitle_streams and input_suffix != ".mkv":
         print("Chyba: --list-subtitle-streams je dostupné iba pre .mkv vstup.", file=sys.stderr)
         return 1
@@ -335,6 +417,11 @@ def main() -> int:
 
     target = args.target or choose_target_interactively()
     output_path = resolve_output_path(input_path, target, args.output)
+    mkv_output_path = resolve_mkv_output_path(input_path, target, args.mkv_output) if args.embed_to_mkv else None
+
+    if mkv_output_path is not None and mkv_output_path.resolve() == input_path.resolve():
+        print("Chyba: výstupné MKV nesmie byť totožné so vstupným súborom.", file=sys.stderr)
+        return 1
 
     temp_to_cleanup: Path | None = subtitle_source_path if input_suffix == ".mkv" else None
 
@@ -343,6 +430,9 @@ def main() -> int:
         translated, total = translate_subtitles(subs, target, args.batch_size)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         subs.save(str(output_path), encoding="utf-8-sig")
+
+        if mkv_output_path is not None:
+            mux_srt_into_mkv(input_path, output_path, mkv_output_path, target)
     except Exception as exc:  # pylint: disable=broad-except
         print(f"Preklad zlyhal: {exc}", file=sys.stderr)
         if temp_to_cleanup and temp_to_cleanup.exists():
@@ -357,6 +447,8 @@ def main() -> int:
         flush=True,
     )
     print(f"Výstup uložený: {output_path}", flush=True)
+    if mkv_output_path is not None:
+        print(f"MKV s vloženými titulkami uložené: {mkv_output_path}", flush=True)
     return 0
 
 
